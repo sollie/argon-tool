@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: false
+            artifact: argon-tool-linux-amd64
+
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: true
+            artifact: argon-tool-linux-arm64
+
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            cross: false
+            artifact: argon-tool-macos-amd64
+
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            cross: false
+            artifact: argon-tool-macos-arm64
+
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            cross: false
+            artifact: argon-tool-windows-amd64.exe
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.5
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: "!matrix.cross"
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename binary (unix)
+        if: matrix.runner != 'windows-latest'
+        run: cp target/${{ matrix.target }}/release/argon-tool ${{ matrix.artifact }}
+
+      - name: Rename binary (windows)
+        if: matrix.runner == 'windows-latest'
+        run: cp target/${{ matrix.target }}/release/argon-tool.exe ${{ matrix.artifact }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  changelog:
+    name: Changelog
+    runs-on: ubuntu-latest
+    outputs:
+      content: ${{ steps.cliff.outputs.content }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - id: cliff
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5
+        with:
+          config: .github/cliff.toml
+          args: --current --strip header
+
+  release:
+    name: Release
+    needs: [build, changelog]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        with:
+          tag_name: ${{ github.ref_name }}
+          body: ${{ needs.changelog.outputs.content }}
+          files: |
+            argon-tool-linux-amd64
+            argon-tool-linux-arm64
+            argon-tool-macos-amd64
+            argon-tool-macos-arm64
+            argon-tool-windows-amd64.exe
