@@ -1,0 +1,11 @@
+[package]
+name = "argon-tool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+argon2    = { version = "0.5.3", features = ["password-hash", "std"] }
+clap      = { version = "4.6.1", features = ["derive", "env"] }
+rand_core = { version = "0.6.4", features = ["getrandom"] }
+rpassword = "7.5.4"
+zeroize   = "1.8.2"
